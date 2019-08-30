@@ -4,8 +4,8 @@ mod json_map;
 mod traverse;
 
 pub use self::{json_map::*, traverse::*};
-pub use handlebars::{self, HelperDef};
 use handlebars::Handlebars;
+pub use handlebars::{self, HelperDef};
 use std::{
     fmt, fs,
     io::{self, Read, Write},
@@ -63,29 +63,28 @@ impl From<handlebars::TemplateRenderError> for RenderingError {
 #[derive(Debug)]
 pub enum ProcessingError {
     /// Failed to traverse files.
-    TraversalError(TraversalError<RenderingError>),
+    TraversalError {
+        src: PathBuf,
+        cause: TraversalError<RenderingError>,
+    },
     /// Failed to create directory.
-    CreateDirectoryError(io::Error),
+    CreateDirectoryError { dest: PathBuf, cause: io::Error },
     /// Failed to copy file.
-    CopyFileError(io::Error),
+    CopyFileError {
+        src: PathBuf,
+        dest: PathBuf,
+        cause: io::Error,
+    },
     /// Failed to open or read input file.
-    ReadTemplateError(io::Error),
+    ReadTemplateError { src: PathBuf, cause: io::Error },
     /// Failed to render template.
-    RenderTemplateError(RenderingError),
+    RenderTemplateError { src: PathBuf, cause: RenderingError },
     /// Failed to create or write output file.
-    WriteTemplateError(io::Error),
-}
-
-impl From<TraversalError<RenderingError>> for ProcessingError {
-    fn from(err: TraversalError<RenderingError>) -> Self {
-        ProcessingError::TraversalError(err)
-    }
-}
-
-impl From<RenderingError> for ProcessingError {
-    fn from(err: RenderingError) -> Self {
-        ProcessingError::RenderTemplateError(err)
-    }
+    WriteTemplateError {
+        src: PathBuf,
+        dest: PathBuf,
+        cause: io::Error,
+    },
 }
 
 #[derive(Debug)]
@@ -206,20 +205,41 @@ impl Bicycle {
         log::info!("{:#?}", action);
         match action {
             Action::CreateDirectory { dest } => {
-                fs::create_dir_all(&dest).map_err(ProcessingError::CreateDirectoryError)?;
+                fs::create_dir_all(&dest).map_err(|cause| {
+                    ProcessingError::CreateDirectoryError {
+                        dest: dest.clone(),
+                        cause,
+                    }
+                })?;
             }
             Action::CopyFile { src, dest } => {
-                fs::copy(src, dest).map_err(ProcessingError::CopyFileError)?;
+                fs::copy(src, dest).map_err(|cause| ProcessingError::CopyFileError {
+                    src: src.clone(),
+                    dest: dest.clone(),
+                    cause,
+                })?;
             }
             Action::WriteTemplate { src, dest } => {
                 let mut template = String::new();
                 fs::File::open(src)
                     .and_then(|mut file| file.read_to_string(&mut template))
-                    .map_err(ProcessingError::ReadTemplateError)?;
-                let rendered = self.render(&template, insert_data)?;
+                    .map_err(|cause| ProcessingError::ReadTemplateError {
+                        src: src.clone(),
+                        cause,
+                    })?;
+                let rendered = self.render(&template, insert_data).map_err(|cause| {
+                    ProcessingError::RenderTemplateError {
+                        src: src.clone(),
+                        cause,
+                    }
+                })?;
                 fs::File::create(dest)
                     .and_then(|mut file| file.write_all(rendered.as_bytes()))
-                    .map_err(ProcessingError::WriteTemplateError)?;
+                    .map_err(|cause| ProcessingError::WriteTemplateError {
+                        src: src.clone(),
+                        dest: dest.clone(),
+                        cause,
+                    })?;
             }
         }
         Ok(())
@@ -245,8 +265,12 @@ impl Bicycle {
         dest: impl AsRef<Path>,
         insert_data: impl Fn(&mut JsonMap),
     ) -> Result<(), ProcessingError> {
+        let src = src.as_ref();
         traverse(src, dest, |path| self.transform_path(path, &insert_data))
-            .map_err(ProcessingError::TraversalError)
+            .map_err(|cause| ProcessingError::TraversalError {
+                src: src.to_owned(),
+                cause,
+            })
             .and_then(|actions| self.process_actions(actions.iter(), insert_data))
     }
 
