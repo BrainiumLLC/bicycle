@@ -50,12 +50,20 @@ impl From<CustomEscapeFn> for EscapeFn {
 /// An error encountered when rendering a template.
 #[derive(Debug)]
 pub enum RenderingError {
-    RenderingError(handlebars::TemplateRenderError),
+    RenderingFailed(handlebars::TemplateRenderError),
+}
+
+impl fmt::Display for RenderingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RenderingError::RenderingFailed(err) => write!(f, "Failed to render template: {}", err),
+        }
+    }
 }
 
 impl From<handlebars::TemplateRenderError> for RenderingError {
     fn from(err: handlebars::TemplateRenderError) -> Self {
-        RenderingError::RenderingError(err)
+        RenderingError::RenderingFailed(err)
     }
 }
 
@@ -63,28 +71,55 @@ impl From<handlebars::TemplateRenderError> for RenderingError {
 #[derive(Debug)]
 pub enum ProcessingError {
     /// Failed to traverse files.
-    TraversalError {
+    TraversalFailed {
         src: PathBuf,
         cause: TraversalError<RenderingError>,
     },
     /// Failed to create directory.
-    CreateDirectoryError { dest: PathBuf, cause: io::Error },
+    DirectoryCreationFailed { dest: PathBuf, cause: io::Error },
     /// Failed to copy file.
-    CopyFileError {
+    FileCopyFailed {
         src: PathBuf,
         dest: PathBuf,
         cause: io::Error,
     },
     /// Failed to open or read input file.
-    ReadTemplateError { src: PathBuf, cause: io::Error },
+    TemplateReadFailed { src: PathBuf, cause: io::Error },
     /// Failed to render template.
-    RenderTemplateError { src: PathBuf, cause: RenderingError },
+    TemplateRenderFailed { src: PathBuf, cause: RenderingError },
     /// Failed to create or write output file.
-    WriteTemplateError {
+    TemplateWriteFailed {
         src: PathBuf,
         dest: PathBuf,
         cause: io::Error,
     },
+}
+
+impl fmt::Display for ProcessingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProcessingError::TraversalFailed { src, cause } => {
+                write!(f, "Failed to traverse templates at {:?}: {}", src, cause)
+            }
+            ProcessingError::DirectoryCreationFailed { dest, cause } => {
+                write!(f, "Failed to create directory at {:?}: {}", dest, cause)
+            }
+            ProcessingError::FileCopyFailed { src, dest, cause } => {
+                write!(f, "Failed to copy file {:?} to {:?}: {}", src, dest, cause)
+            }
+            ProcessingError::TemplateReadFailed { src, cause } => {
+                write!(f, "Failed to read template at {:?}: {}", src, cause)
+            }
+            ProcessingError::TemplateRenderFailed { src, cause } => {
+                write!(f, "Failed to render template at {:?}: {}", src, cause)
+            }
+            ProcessingError::TemplateWriteFailed { src, dest, cause } => write!(
+                f,
+                "Failed to write template from {:?} to {:?}: {}",
+                src, dest, cause
+            ),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -186,17 +221,17 @@ impl Bicycle {
     ///
     /// - [`Action::CreateDirectory`] is executed with the same semantics as `mkdir -p`:
     ///   any missing parent directories are also created, and creation succeeds even if
-    ///   the directory already exists. Failure results in a [`ProcessingError::CreateDirectoryError`].
+    ///   the directory already exists. Failure results in a [`ProcessingError::DirectoryCreationFailed`].
     /// - [`Action::CopyFile`] is executed with the same semantics as `cp`:
     ///   if the destination file already exists, it will be overwritted with a copy of
-    ///   the source file. Failure results in a [`ProcessingError::CopyFileError`].
+    ///   the source file. Failure results in a [`ProcessingError::FileCopyFailed`].
     /// - [`Action::WriteTemplate`] is executed by reading the source file,
     ///   rendering the contents as a template (using `insert_data` to pass
     ///   any required values to the underlying [`Bicycle::render`] call),
     ///   and then finally writing the result to the destination file. The destination
     ///   file will be overwritten if it already exists. Failure for each step results
-    ///   in [`ProcessingError::ReadTemplateError`], [`ProcessingError::RenderTemplateError`],
-    ///   and [`ProcessingError::WriteTemplateError`], respectively.
+    ///   in [`ProcessingError::TemplateReadFailed`], [`ProcessingError::TemplateRenderFailed`],
+    ///   and [`ProcessingError::TemplateWriteFailed`], respectively.
     pub fn process_action(
         &self,
         action: &Action,
@@ -206,14 +241,14 @@ impl Bicycle {
         match action {
             Action::CreateDirectory { dest } => {
                 fs::create_dir_all(&dest).map_err(|cause| {
-                    ProcessingError::CreateDirectoryError {
+                    ProcessingError::DirectoryCreationFailed {
                         dest: dest.clone(),
                         cause,
                     }
                 })?;
             }
             Action::CopyFile { src, dest } => {
-                fs::copy(src, dest).map_err(|cause| ProcessingError::CopyFileError {
+                fs::copy(src, dest).map_err(|cause| ProcessingError::FileCopyFailed {
                     src: src.clone(),
                     dest: dest.clone(),
                     cause,
@@ -223,19 +258,19 @@ impl Bicycle {
                 let mut template = String::new();
                 fs::File::open(src)
                     .and_then(|mut file| file.read_to_string(&mut template))
-                    .map_err(|cause| ProcessingError::ReadTemplateError {
+                    .map_err(|cause| ProcessingError::TemplateReadFailed {
                         src: src.clone(),
                         cause,
                     })?;
                 let rendered = self.render(&template, insert_data).map_err(|cause| {
-                    ProcessingError::RenderTemplateError {
+                    ProcessingError::TemplateRenderFailed {
                         src: src.clone(),
                         cause,
                     }
                 })?;
                 fs::File::create(dest)
                     .and_then(|mut file| file.write_all(rendered.as_bytes()))
-                    .map_err(|cause| ProcessingError::WriteTemplateError {
+                    .map_err(|cause| ProcessingError::TemplateWriteFailed {
                         src: src.clone(),
                         dest: dest.clone(),
                         cause,
@@ -267,7 +302,7 @@ impl Bicycle {
     ) -> Result<(), ProcessingError> {
         let src = src.as_ref();
         traverse(src, dest, |path| self.transform_path(path, &insert_data))
-            .map_err(|cause| ProcessingError::TraversalError {
+            .map_err(|cause| ProcessingError::TraversalFailed {
                 src: src.to_owned(),
                 cause,
             })

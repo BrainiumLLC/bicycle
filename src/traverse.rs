@@ -94,33 +94,61 @@ fn file_action<E>(
 
 /// An error encountered when traversing a file tree.
 #[derive(Debug)]
-pub enum TraversalError<E: fmt::Debug = crate::RenderingError> {
+pub enum TraversalError<E: fmt::Debug + fmt::Display = crate::RenderingError> {
     /// Failed to get directory listing.
-    ReadDirectoryError(io::Error),
+    DirectoryReadFailed { path: PathBuf, cause: io::Error },
     /// Failed to inspect entry from directory listing.
-    ReadEntryError(io::Error),
+    EntryReadFailed { dir: PathBuf, cause: io::Error },
     /// Failed to transform path.
-    TransformPathError(E),
+    PathTransformFailed { path: PathBuf, cause: E },
 }
 
-impl<E: fmt::Debug> From<E> for TraversalError<E> {
-    fn from(err: E) -> Self {
-        TraversalError::TransformPathError(err)
+impl<E: fmt::Debug + fmt::Display> fmt::Display for TraversalError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TraversalError::DirectoryReadFailed { path, cause } => {
+                write!(f, "Failed to read directory at {:?}: {}", path, cause)
+            }
+            TraversalError::EntryReadFailed { dir, cause } => {
+                write!(f, "Failed to read directory entry in {:?}: {}", dir, cause)
+            }
+            TraversalError::PathTransformFailed { path, cause } => {
+                write!(f, "Failed to transform path at {:?}: {}", path, cause)
+            }
+        }
     }
 }
 
-fn traverse_dir<E: fmt::Debug>(
+fn traverse_dir<E: fmt::Debug + fmt::Display>(
     src: &Path,
     dest: &Path,
     transform_path: &impl Fn(&Path) -> Result<PathBuf, E>,
     actions: &mut VecDeque<Action>,
 ) -> Result<(), TraversalError<E>> {
     if src.is_file() {
-        actions.push_back(file_action(src, dest, transform_path)?);
+        actions.push_back(file_action(src, dest, transform_path).map_err(|cause| {
+            TraversalError::PathTransformFailed {
+                path: dest.to_owned(),
+                cause,
+            }
+        })?);
     } else {
-        actions.push_front(Action::new_create_directory(dest, transform_path)?);
-        for entry in fs::read_dir(src).map_err(TraversalError::ReadDirectoryError)? {
-            let path = entry.map_err(TraversalError::ReadEntryError)?.path();
+        actions.push_front(Action::new_create_directory(dest, transform_path).map_err(
+            |cause| TraversalError::PathTransformFailed {
+                path: dest.to_owned(),
+                cause,
+            },
+        )?);
+        for entry in fs::read_dir(src).map_err(|cause| TraversalError::DirectoryReadFailed {
+            path: src.to_owned(),
+            cause,
+        })? {
+            let path = entry
+                .map_err(|cause| TraversalError::EntryReadFailed {
+                    dir: src.to_owned(),
+                    cause,
+                })?
+                .path();
             if path.is_dir() {
                 traverse_dir(
                     &path,
@@ -129,7 +157,12 @@ fn traverse_dir<E: fmt::Debug>(
                     actions,
                 )?;
             } else {
-                actions.push_back(file_action(&path, dest, transform_path)?);
+                actions.push_back(file_action(&path, dest, transform_path).map_err(|cause| {
+                    TraversalError::PathTransformFailed {
+                        path: path.to_owned(),
+                        cause,
+                    }
+                })?);
             }
         }
     }
@@ -148,7 +181,7 @@ fn traverse_dir<E: fmt::Debug>(
 ///
 /// `transform_path` is used to post-process destination path strings.
 /// [`Bicycle::transform_path`](crate::Bicycle::transform_path) is one possible implementation.
-pub fn traverse<E: fmt::Debug>(
+pub fn traverse<E: fmt::Debug + fmt::Display>(
     src: impl AsRef<Path>,
     dest: impl AsRef<Path>,
     transform_path: impl Fn(&Path) -> Result<PathBuf, E>,
