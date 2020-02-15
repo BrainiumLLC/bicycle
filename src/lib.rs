@@ -124,7 +124,7 @@ impl fmt::Display for ProcessingError {
 
 #[derive(Debug)]
 pub struct Bicycle {
-    handlebars: Handlebars,
+    handlebars: Handlebars<'static>,
     base_data: JsonMap,
 }
 
