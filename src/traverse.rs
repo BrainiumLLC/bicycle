@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-static TEMPLATE_EXT: &'static str = "hbs";
+pub static DEFAULT_TEMPLATE_EXT: Option<&'static str> = Some("hbs");
 
 /// Instruction for performing a filesystem action or template processing.
 #[derive(Debug)]
@@ -80,11 +80,11 @@ fn file_action<E>(
     src: &Path,
     dest: &Path,
     transform_path: impl Fn(&Path) -> Result<PathBuf, E>,
+    template_ext: Option<&str>,
 ) -> Result<Action, E> {
-    let is_template = src
-        .extension()
-        .map(|ext| ext == TEMPLATE_EXT)
-        .unwrap_or(false);
+    let is_template = template_ext
+        .and_then(|template_ext| src.extension().filter(|ext| *ext == template_ext))
+        .is_some();
     if is_template {
         Action::new_write_template(src, dest, transform_path)
     } else {
@@ -123,15 +123,18 @@ fn traverse_dir<E: fmt::Debug + fmt::Display>(
     src: &Path,
     dest: &Path,
     transform_path: &impl Fn(&Path) -> Result<PathBuf, E>,
+    template_ext: Option<&str>,
     actions: &mut VecDeque<Action>,
 ) -> Result<(), TraversalError<E>> {
     if src.is_file() {
-        actions.push_back(file_action(src, dest, transform_path).map_err(|cause| {
-            TraversalError::PathTransformFailed {
-                path: dest.to_owned(),
-                cause,
-            }
-        })?);
+        actions.push_back(
+            file_action(src, dest, transform_path, template_ext).map_err(|cause| {
+                TraversalError::PathTransformFailed {
+                    path: dest.to_owned(),
+                    cause,
+                }
+            })?,
+        );
     } else {
         actions.push_front(Action::new_create_directory(dest, transform_path).map_err(
             |cause| TraversalError::PathTransformFailed {
@@ -154,15 +157,18 @@ fn traverse_dir<E: fmt::Debug + fmt::Display>(
                     &path,
                     &append_path(dest, &path, false),
                     transform_path,
+                    template_ext,
                     actions,
                 )?;
             } else {
-                actions.push_back(file_action(&path, dest, transform_path).map_err(|cause| {
-                    TraversalError::PathTransformFailed {
-                        path: path.to_owned(),
-                        cause,
-                    }
-                })?);
+                actions.push_back(
+                    file_action(&path, dest, transform_path, template_ext).map_err(|cause| {
+                        TraversalError::PathTransformFailed {
+                            path: path.to_owned(),
+                            cause,
+                        }
+                    })?,
+                );
             }
         }
     }
@@ -176,8 +182,8 @@ fn traverse_dir<E: fmt::Debug + fmt::Display>(
 /// File tree contents are interpreted as follows:
 /// - Each directory in the file tree generates an [`Action::CreateDirectory`].
 ///   Directories are traversed recursively.
-/// - Each file that doesn't end in the extension `.hbs` generates an [`Action::CopyFile`].
-/// - Each file that ends in the extension `.hbs` generates an [`Action::WriteTemplate`].
+/// - Each file that doesn't end in `template_ext` generates an [`Action::CopyFile`].
+/// - Each file that ends in `template_ext` generates an [`Action::WriteTemplate`].
 ///
 /// `transform_path` is used to post-process destination path strings.
 /// [`Bicycle::transform_path`](crate::Bicycle::transform_path) is one possible implementation.
@@ -185,9 +191,10 @@ pub fn traverse<E: fmt::Debug + fmt::Display>(
     src: impl AsRef<Path>,
     dest: impl AsRef<Path>,
     transform_path: impl Fn(&Path) -> Result<PathBuf, E>,
+    template_ext: Option<&str>,
 ) -> Result<VecDeque<Action>, TraversalError<E>> {
     let src = src.as_ref();
     let dest = dest.as_ref();
     let mut actions = VecDeque::new();
-    traverse_dir(src, dest, &transform_path, &mut actions).map(|_| actions)
+    traverse_dir(src, dest, &transform_path, template_ext, &mut actions).map(|_| actions)
 }

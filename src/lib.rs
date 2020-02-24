@@ -292,8 +292,10 @@ impl Bicycle {
         Ok(())
     }
 
-    /// A convenience method that calls [`traverse`](traverse()) and passes the output to [`Bicycle::process_actions`].
-    /// Uses [`Bicycle::transform_path`] as the `transform_path` argument to [`traverse`](traverse()).
+    /// A convenience method that calls [`traverse`](traverse()) and passes the
+    /// output to [`Bicycle::process_actions`]. Uses [`Bicycle::transform_path`]
+    /// as the `transform_path` argument and `DEFAULT_TEMPLATE_EXT` as the
+    /// `template_ext` argument to [`traverse`](traverse()).
     pub fn process(
         &self,
         src: impl AsRef<Path>,
@@ -301,12 +303,17 @@ impl Bicycle {
         insert_data: impl Fn(&mut JsonMap),
     ) -> Result<(), ProcessingError> {
         let src = src.as_ref();
-        traverse(src, dest, |path| self.transform_path(path, &insert_data))
-            .map_err(|cause| ProcessingError::TraversalFailed {
-                src: src.to_owned(),
-                cause,
-            })
-            .and_then(|actions| self.process_actions(actions.iter(), insert_data))
+        traverse(
+            src,
+            dest,
+            |path| self.transform_path(path, &insert_data),
+            DEFAULT_TEMPLATE_EXT,
+        )
+        .map_err(|cause| ProcessingError::TraversalFailed {
+            src: src.to_owned(),
+            cause,
+        })
+        .and_then(|actions| self.process_actions(actions.iter(), insert_data))
     }
 
     /// Renders a path string itself as a template.
