@@ -4,8 +4,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub static DEFAULT_TEMPLATE_EXT: Option<&'static str> = Some("hbs");
-
 /// Instruction for performing a filesystem action or template processing.
 #[derive(Debug)]
 pub enum Action {
@@ -198,3 +196,12 @@ pub fn traverse<E: fmt::Debug + fmt::Display>(
     let mut actions = VecDeque::new();
     traverse_dir(src, dest, &transform_path, template_ext, &mut actions).map(|_| actions)
 }
+
+/// Pass this to `traverse` if you don't want any path transformation at all.
+pub fn no_transform(path: &Path) -> Result<PathBuf, std::convert::Infallible> {
+    Ok(path.to_owned())
+}
+
+/// `Some("hbs")`. Pass this to `traverse` to get the same template
+/// identification behavior as `Bicycle::process`.
+pub static DEFAULT_TEMPLATE_EXT: Option<&'static str> = Some("hbs");

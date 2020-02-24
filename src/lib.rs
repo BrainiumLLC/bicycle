@@ -294,8 +294,8 @@ impl Bicycle {
 
     /// A convenience method that calls [`traverse`](traverse()) and passes the
     /// output to [`Bicycle::process_actions`]. Uses [`Bicycle::transform_path`]
-    /// as the `transform_path` argument and `DEFAULT_TEMPLATE_EXT` as the
-    /// `template_ext` argument to [`traverse`](traverse()).
+    /// as the `transform_path` argument and `DEFAULT_TEMPLATE_EXT` ("hbs") as
+    /// the `template_ext` argument to [`traverse`](traverse()).
     pub fn process(
         &self,
         src: impl AsRef<Path>,
