@@ -1,10 +1,9 @@
 //! `bicycle` is [`handlebars`] with wheels. 🚴🏽‍♀️
 
-mod dumb_copy;
 mod json_map;
 mod traverse;
 
-pub use self::{dumb_copy::*, json_map::*, traverse::*};
+pub use self::{json_map::*, traverse::*};
 use handlebars::Handlebars;
 pub use handlebars::{self, HelperDef};
 use std::{
