@@ -169,7 +169,7 @@ impl Bicycle {
     /// ```
     pub fn new<'helper_name>(
         escape_fn: EscapeFn,
-        helpers: impl iter::IntoIterator<Item = (&'helper_name str, Box<dyn HelperDef + 'static>)>,
+        helpers: impl iter::IntoIterator<Item = (&'helper_name str, Box<dyn HelperDef + Send + Sync + 'static>)>,
         base_data: JsonMap,
     ) -> Self {
         let mut handlebars = Handlebars::new();
