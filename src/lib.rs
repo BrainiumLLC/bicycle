@@ -158,7 +158,7 @@ impl Bicycle {
     ///
     /// // You could just as well use a [`Vec`] of tuples, or in this case,
     /// // [`std::iter::once`].
-    /// let mut helpers = HashMap::<_, Box<dyn HelperDef>>::new();
+    /// let mut helpers = HashMap::<_, Box<dyn HelperDef + Send + Sync>>::new();
     /// helpers.insert("reverse", Box::new(reverse));
     ///
     /// let bike = Bicycle::new(
@@ -169,7 +169,12 @@ impl Bicycle {
     /// ```
     pub fn new<'helper_name>(
         escape_fn: EscapeFn,
-        helpers: impl iter::IntoIterator<Item = (&'helper_name str, Box<dyn HelperDef + Send + Sync + 'static>)>,
+        helpers: impl iter::IntoIterator<
+            Item = (
+                &'helper_name str,
+                Box<dyn HelperDef + Send + Sync + 'static>,
+            ),
+        >,
         base_data: JsonMap,
     ) -> Self {
         let mut handlebars = Handlebars::new();
