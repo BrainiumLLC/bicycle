@@ -22,7 +22,7 @@ impl Action {
         dest: &Path,
         transform_path: impl Fn(&Path) -> Result<PathBuf, E>,
     ) -> Result<Self, E> {
-        Ok(Action::CreateDirectory {
+        Ok(Self::CreateDirectory {
             dest: transform_path(dest)?,
         })
     }
@@ -35,7 +35,7 @@ impl Action {
         transform_path: impl Fn(&Path) -> Result<PathBuf, E>,
     ) -> Result<Self, E> {
         let dest = append_path(dest, src, false);
-        Ok(Action::CopyFile {
+        Ok(Self::CopyFile {
             src: src.to_owned(),
             dest: transform_path(&dest)?,
         })
@@ -49,10 +49,22 @@ impl Action {
         transform_path: impl Fn(&Path) -> Result<PathBuf, E>,
     ) -> Result<Self, E> {
         let dest = append_path(dest, src, true);
-        Ok(Action::WriteTemplate {
+        Ok(Self::WriteTemplate {
             src: src.to_owned(),
             dest: transform_path(&dest)?,
         })
+    }
+
+    pub fn is_create_directory(&self) -> bool {
+        matches!(self, Self::CreateDirectory { .. })
+    }
+
+    pub fn is_copy_file(&self) -> bool {
+        matches!(self, Self::CopyFile { .. })
+    }
+
+    pub fn is_write_template(&self) -> bool {
+        matches!(self, Self::WriteTemplate { .. })
     }
 
     /// Gets the destination of any [`Action`] variant.
