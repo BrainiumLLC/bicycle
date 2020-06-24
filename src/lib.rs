@@ -307,6 +307,18 @@ impl Bicycle {
         dest: impl AsRef<Path>,
         insert_data: impl Fn(&mut JsonMap),
     ) -> Result<(), ProcessingError> {
+        self.filter_and_process(src, dest, insert_data, |_| true)
+    }
+
+    /// A convenience method that does the same work as [`Bicycle::process`],
+    /// but applies a filter predicate to each action prior to processing it.
+    pub fn filter_and_process(
+        &self,
+        src: impl AsRef<Path>,
+        dest: impl AsRef<Path>,
+        insert_data: impl Fn(&mut JsonMap),
+        mut filter: impl FnMut(&Action) -> bool,
+    ) -> Result<(), ProcessingError> {
         let src = src.as_ref();
         traverse(
             src,
@@ -318,7 +330,9 @@ impl Bicycle {
             src: src.to_owned(),
             cause,
         })
-        .and_then(|actions| self.process_actions(actions.iter(), insert_data))
+        .and_then(|actions| {
+            self.process_actions(actions.iter().filter(|action| filter(action)), insert_data)
+        })
     }
 
     /// Renders a path string itself as a template.
