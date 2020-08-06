@@ -1,8 +1,11 @@
 use std::{
     collections::VecDeque,
-    fmt, fs, io,
+    error::Error as StdError,
+    fmt::{Debug, Display},
+    fs, io,
     path::{Path, PathBuf},
 };
+use thiserror::Error;
 
 /// Instruction for performing a filesystem action or template processing.
 #[derive(Debug)]
@@ -70,9 +73,9 @@ impl Action {
     /// Gets the destination of any [`Action`] variant.
     pub fn dest(&self) -> &Path {
         match self {
-            Action::CreateDirectory { dest }
-            | Action::CopyFile { dest, .. }
-            | Action::WriteTemplate { dest, .. } => &dest,
+            Self::CreateDirectory { dest }
+            | Self::CopyFile { dest, .. }
+            | Self::WriteTemplate { dest, .. } => &dest,
         }
     }
 }
@@ -103,33 +106,32 @@ fn file_action<E>(
 }
 
 /// An error encountered when traversing a file tree.
-#[derive(Debug)]
-pub enum TraversalError<E: fmt::Debug + fmt::Display = crate::RenderingError> {
+#[derive(Debug, Error)]
+pub enum TraversalError<E: Debug + Display + StdError + 'static = crate::RenderingError> {
     /// Failed to get directory listing.
-    DirectoryReadFailed { path: PathBuf, cause: io::Error },
+    #[error("Failed to read directory at {path:?}: {cause}")]
+    DirectoryReadFailed {
+        path: PathBuf,
+        #[source]
+        cause: io::Error,
+    },
     /// Failed to inspect entry from directory listing.
-    EntryReadFailed { dir: PathBuf, cause: io::Error },
+    #[error("Failed to read directory entry in {dir:?}: {cause}")]
+    EntryReadFailed {
+        dir: PathBuf,
+        #[source]
+        cause: io::Error,
+    },
     /// Failed to transform path.
-    PathTransformFailed { path: PathBuf, cause: E },
+    #[error("Failed to transform path at {path:?}: {cause}")]
+    PathTransformFailed {
+        path: PathBuf,
+        #[source]
+        cause: E,
+    },
 }
 
-impl<E: fmt::Debug + fmt::Display> fmt::Display for TraversalError<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TraversalError::DirectoryReadFailed { path, cause } => {
-                write!(f, "Failed to read directory at {:?}: {}", path, cause)
-            }
-            TraversalError::EntryReadFailed { dir, cause } => {
-                write!(f, "Failed to read directory entry in {:?}: {}", dir, cause)
-            }
-            TraversalError::PathTransformFailed { path, cause } => {
-                write!(f, "Failed to transform path at {:?}: {}", path, cause)
-            }
-        }
-    }
-}
-
-fn traverse_dir<E: fmt::Debug + fmt::Display>(
+fn traverse_dir<E: Debug + Display + StdError>(
     src: &Path,
     dest: &Path,
     transform_path: &impl Fn(&Path) -> Result<PathBuf, E>,
@@ -197,7 +199,7 @@ fn traverse_dir<E: fmt::Debug + fmt::Display>(
 ///
 /// `transform_path` is used to post-process destination path strings.
 /// [`Bicycle::transform_path`](crate::Bicycle::transform_path) is one possible implementation.
-pub fn traverse<E: fmt::Debug + fmt::Display>(
+pub fn traverse<E: Debug + Display + StdError>(
     src: impl AsRef<Path>,
     dest: impl AsRef<Path>,
     transform_path: impl Fn(&Path) -> Result<PathBuf, E>,

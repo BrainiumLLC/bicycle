@@ -7,14 +7,14 @@ use serde_json::value::{Map, Value as Json};
 #[repr(transparent)]
 pub struct JsonMap(pub(crate) Map<String, Json>);
 
-impl JsonMap {
-    pub fn insert(&mut self, name: &str, value: impl Serialize) {
-        self.0.insert(name.to_owned(), to_json(value));
-    }
-}
-
 impl Default for JsonMap {
     fn default() -> Self {
         Self(Map::new())
+    }
+}
+
+impl JsonMap {
+    pub fn insert(&mut self, name: &str, value: impl Serialize) {
+        self.0.insert(name.to_owned(), to_json(value));
     }
 }

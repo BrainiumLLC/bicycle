@@ -4,14 +4,17 @@ mod json_map;
 mod traverse;
 
 pub use self::{json_map::*, traverse::*};
-use handlebars::Handlebars;
 pub use handlebars::{self, HelperDef};
+
+use handlebars::Handlebars;
 use std::{
-    fmt, fs,
+    fmt::{self, Debug},
+    fs,
     io::{self, Read, Write},
     iter,
     path::{Path, PathBuf},
 };
+use thiserror::Error;
 
 pub type CustomEscapeFn = &'static (dyn Fn(&str) -> String + 'static + Send + Sync);
 
@@ -25,101 +28,82 @@ pub enum EscapeFn {
     Custom(CustomEscapeFn),
 }
 
-impl fmt::Debug for EscapeFn {
+impl Debug for EscapeFn {
     fn fmt(&self, fmtr: &mut fmt::Formatter) -> fmt::Result {
         fmtr.pad(match self {
-            EscapeFn::None => "None",
-            EscapeFn::Html => "Html",
-            EscapeFn::Custom(_) => "Custom(..)",
+            Self::None => "None",
+            Self::Html => "Html",
+            Self::Custom(_) => "Custom(..)",
         })
     }
 }
 
 impl Default for EscapeFn {
     fn default() -> Self {
-        EscapeFn::None
+        Self::None
     }
 }
 
 impl From<CustomEscapeFn> for EscapeFn {
     fn from(custom: CustomEscapeFn) -> Self {
-        EscapeFn::Custom(custom)
+        Self::Custom(custom)
     }
 }
 
 /// An error encountered when rendering a template.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum RenderingError {
-    RenderingFailed(handlebars::TemplateRenderError),
-}
-
-impl fmt::Display for RenderingError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RenderingError::RenderingFailed(err) => write!(f, "Failed to render template: {}", err),
-        }
-    }
-}
-
-impl From<handlebars::TemplateRenderError> for RenderingError {
-    fn from(err: handlebars::TemplateRenderError) -> Self {
-        RenderingError::RenderingFailed(err)
-    }
+    #[error("Failed to render template: {0}")]
+    RenderingFailed(#[from] handlebars::TemplateRenderError),
 }
 
 /// An error encountered when processing an [`Action`].
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ProcessingError {
     /// Failed to traverse files.
+    #[error("Failed to traverse templates at {src:?}: {cause}")]
     TraversalFailed {
         src: PathBuf,
+        #[source]
         cause: TraversalError<RenderingError>,
     },
     /// Failed to create directory.
-    DirectoryCreationFailed { dest: PathBuf, cause: io::Error },
+    #[error("Failed to create directory at {dest:?}: {cause}")]
+    DirectoryCreationFailed {
+        dest: PathBuf,
+        #[source]
+        cause: io::Error,
+    },
     /// Failed to copy file.
+    #[error("Failed to copy file {src:?} to {dest:?}: {cause}")]
     FileCopyFailed {
         src: PathBuf,
         dest: PathBuf,
+        #[source]
         cause: io::Error,
     },
     /// Failed to open or read input file.
-    TemplateReadFailed { src: PathBuf, cause: io::Error },
+    #[error("Failed to read template at {src:?}: {cause}")]
+    TemplateReadFailed {
+        src: PathBuf,
+        #[source]
+        cause: io::Error,
+    },
     /// Failed to render template.
-    TemplateRenderFailed { src: PathBuf, cause: RenderingError },
+    #[error("Failed to render template at {src:?}: {cause}")]
+    TemplateRenderFailed {
+        src: PathBuf,
+        #[source]
+        cause: RenderingError,
+    },
     /// Failed to create or write output file.
+    #[error("Failed to write template from {src:?} to {dest:?}: {cause}")]
     TemplateWriteFailed {
         src: PathBuf,
         dest: PathBuf,
+        #[source]
         cause: io::Error,
     },
-}
-
-impl fmt::Display for ProcessingError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ProcessingError::TraversalFailed { src, cause } => {
-                write!(f, "Failed to traverse templates at {:?}: {}", src, cause)
-            }
-            ProcessingError::DirectoryCreationFailed { dest, cause } => {
-                write!(f, "Failed to create directory at {:?}: {}", dest, cause)
-            }
-            ProcessingError::FileCopyFailed { src, dest, cause } => {
-                write!(f, "Failed to copy file {:?} to {:?}: {}", src, dest, cause)
-            }
-            ProcessingError::TemplateReadFailed { src, cause } => {
-                write!(f, "Failed to read template at {:?}: {}", src, cause)
-            }
-            ProcessingError::TemplateRenderFailed { src, cause } => {
-                write!(f, "Failed to render template at {:?}: {}", src, cause)
-            }
-            ProcessingError::TemplateWriteFailed { src, dest, cause } => write!(
-                f,
-                "Failed to write template from {:?} to {:?}: {}",
-                src, dest, cause
-            ),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -128,8 +112,14 @@ pub struct Bicycle {
     base_data: JsonMap,
 }
 
+impl Default for Bicycle {
+    fn default() -> Self {
+        Self::new(Default::default(), iter::empty(), Default::default())
+    }
+}
+
 impl Bicycle {
-    /// Creates a new [`Bicycle`] instance, using the provided arguments to
+    /// Creates a new `Bicycle` instance, using the provided arguments to
     /// configure the underlying [`handlebars::Handlebars`] instance.
     ///
     /// For info on `helpers`, consult the [`handlebars` docs](../handlebars/index.html#custom-helper).
@@ -349,11 +339,5 @@ impl Bicycle {
         } else {
             Ok(path.to_owned())
         }
-    }
-}
-
-impl Default for Bicycle {
-    fn default() -> Self {
-        Self::new(Default::default(), iter::empty(), Default::default())
     }
 }
