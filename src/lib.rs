@@ -1,5 +1,7 @@
 //! `bicycle` is [`handlebars`] with wheels. 🚴🏽‍♀️
 
+#![forbid(unsafe_code)]
+
 mod json_map;
 mod traverse;
 
@@ -171,11 +173,8 @@ impl Bicycle {
         handlebars.set_strict_mode(true);
         match escape_fn {
             EscapeFn::Custom(escape_fn) => handlebars.register_escape_fn(escape_fn),
-            _ => handlebars.register_escape_fn(match escape_fn {
-                EscapeFn::None => handlebars::no_escape,
-                EscapeFn::Html => handlebars::html_escape,
-                _ => unsafe { std::hint::unreachable_unchecked() },
-            }),
+            EscapeFn::None => handlebars.register_escape_fn(handlebars::no_escape),
+            EscapeFn::Html => handlebars.register_escape_fn(handlebars::html_escape),
         }
         for (name, helper) in helpers {
             handlebars.register_helper(name, helper);
