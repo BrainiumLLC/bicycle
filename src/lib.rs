@@ -70,17 +70,17 @@ pub enum ProcessingError {
         cause: TraversalError<RenderingError>,
     },
     /// Failed to create directory.
-    #[error("Failed to create directory at {dest:?}: {cause}")]
+    #[error("Failed to create directory at {dst:?}: {cause}")]
     DirectoryCreationFailed {
-        dest: PathBuf,
+        dst: PathBuf,
         #[source]
         cause: io::Error,
     },
     /// Failed to copy file.
-    #[error("Failed to copy file {src:?} to {dest:?}: {cause}")]
+    #[error("Failed to copy file {src:?} to {dst:?}: {cause}")]
     FileCopyFailed {
         src: PathBuf,
-        dest: PathBuf,
+        dst: PathBuf,
         #[source]
         cause: io::Error,
     },
@@ -99,10 +99,10 @@ pub enum ProcessingError {
         cause: RenderingError,
     },
     /// Failed to create or write output file.
-    #[error("Failed to write template from {src:?} to {dest:?}: {cause}")]
+    #[error("Failed to write template from {src:?} to {dst:?}: {cause}")]
     TemplateWriteFailed {
         src: PathBuf,
-        dest: PathBuf,
+        dst: PathBuf,
         #[source]
         cause: io::Error,
     },
@@ -232,41 +232,43 @@ impl Bicycle {
         insert_data: impl Fn(&mut JsonMap),
     ) -> Result<(), ProcessingError> {
         log::info!("{:#?}", action);
-        match action {
-            Action::CreateDirectory { dest } => {
-                fs::create_dir_all(&dest).map_err(|cause| {
+        match action.tag() {
+            Tag::CreateDirectory => {
+                fs::create_dir_all(action.dst()).map_err(|cause| {
                     ProcessingError::DirectoryCreationFailed {
-                        dest: dest.clone(),
+                        dst: action.dst().to_owned(),
                         cause,
                     }
                 })?;
             }
-            Action::CopyFile { src, dest } => {
-                fs::copy(src, dest).map_err(|cause| ProcessingError::FileCopyFailed {
-                    src: src.clone(),
-                    dest: dest.clone(),
-                    cause,
+            Tag::CopyFile => {
+                fs::copy(action.src(), action.dst()).map_err(|cause| {
+                    ProcessingError::FileCopyFailed {
+                        src: action.src().to_owned(),
+                        dst: action.dst().to_owned(),
+                        cause,
+                    }
                 })?;
             }
-            Action::WriteTemplate { src, dest } => {
+            Tag::WriteTemplate => {
                 let mut template = String::new();
-                fs::File::open(src)
+                fs::File::open(action.src())
                     .and_then(|mut file| file.read_to_string(&mut template))
                     .map_err(|cause| ProcessingError::TemplateReadFailed {
-                        src: src.clone(),
+                        src: action.src().to_owned(),
                         cause,
                     })?;
                 let rendered = self.render(&template, insert_data).map_err(|cause| {
                     ProcessingError::TemplateRenderFailed {
-                        src: src.clone(),
+                        src: action.src().to_owned(),
                         cause,
                     }
                 })?;
-                fs::File::create(dest)
+                fs::File::create(action.dst())
                     .and_then(|mut file| file.write_all(rendered.as_bytes()))
                     .map_err(|cause| ProcessingError::TemplateWriteFailed {
-                        src: src.clone(),
-                        dest: dest.clone(),
+                        src: action.src().to_owned(),
+                        dst: action.dst().to_owned(),
                         cause,
                     })?;
             }
@@ -287,16 +289,16 @@ impl Bicycle {
     }
 
     /// A convenience method that calls [`traverse`](traverse()) and passes the
-    /// output to [`Bicycle::process_actions`]. Uses [`Bicycle::transform_path`]
-    /// as the `transform_path` argument and `DEFAULT_TEMPLATE_EXT` ("hbs") as
+    /// output to [`Bicycle::process_actions`]. Uses [`Bicycle::transform_dst`]
+    /// as the `transform_dst` argument and `DEFAULT_TEMPLATE_EXT` ("hbs") as
     /// the `template_ext` argument to [`traverse`](traverse()).
     pub fn process(
         &self,
         src: impl AsRef<Path>,
-        dest: impl AsRef<Path>,
+        dst: impl AsRef<Path>,
         insert_data: impl Fn(&mut JsonMap),
     ) -> Result<(), ProcessingError> {
-        self.filter_and_process(src, dest, insert_data, |_| true)
+        self.filter_and_process(src, dst, insert_data, |_| true)
     }
 
     /// A convenience method that does the same work as [`Bicycle::process`],
@@ -304,15 +306,15 @@ impl Bicycle {
     pub fn filter_and_process(
         &self,
         src: impl AsRef<Path>,
-        dest: impl AsRef<Path>,
+        dst: impl AsRef<Path>,
         insert_data: impl Fn(&mut JsonMap),
         mut filter: impl FnMut(&Action) -> bool,
     ) -> Result<(), ProcessingError> {
         let src = src.as_ref();
         traverse(
             src,
-            dest,
-            |path| self.transform_path(path, &insert_data),
+            dst,
+            |path| self.transform_dst(path, &insert_data),
             DEFAULT_TEMPLATE_EXT,
         )
         .map_err(|cause| ProcessingError::TraversalFailed {
@@ -325,8 +327,8 @@ impl Bicycle {
     }
 
     /// Renders a path string itself as a template.
-    /// Intended to be used as the `transform_path` argument to [`traverse`](traverse()).
-    pub fn transform_path(
+    /// Intended to be used as the `transform_dst` argument to [`traverse`](traverse()).
+    pub fn transform_dst(
         &self,
         path: &Path,
         insert_data: impl FnOnce(&mut JsonMap),
