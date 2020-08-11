@@ -1,7 +1,7 @@
 [package]
 name = "bicycle"
 version = "0.1.0"
-authors = ["Francesca Lovebloom <francesca@brainiumstudios.com>"]
+authors = ["Brainium Studios LLC", "Francesca Lovebloom <francesca@brainiumstudios.com>"]
 edition = "2018"
 description = "Handlebars with wheels. 🚴🏽‍♀️"
 documentation = "https://docs.rs/bicycle"
